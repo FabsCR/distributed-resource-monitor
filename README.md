@@ -26,7 +26,23 @@ redis-cli ping
 # PONG
 ```
 
-## 4. Prepare Python Environment
+### 4. Install Docker
+```bash 
+   brew install --cask docker
+   open /Applications/Docker.app
+```
+
+### 5. Run MinIO container
+```bash
+docker run -d --name minio \
+  -p 9000:9000 -p 9001:9001 \
+  -e "MINIO_ROOT_USER=<YOUR_USER>" \
+  -e "MINIO_ROOT_PASSWORD=<YOUR_8_CHARACTERS_PASSWORD>" \
+  -v ~/minio/data:/data \
+  minio/minio server /data --console-address ":9001"
+```
+
+## 6. Prepare Python Environment
 1. Create and activate a virtual environment:
    ```bash
    python3 -m venv venv
@@ -37,24 +53,28 @@ redis-cli ping
    pip install -r requirements.txt
    ```
 
-## 6. Configure the `.env` File
+## 7. Configure the `.env` File
 Create a `.env` file in the project root with these entries:
 ```dotenv
 # Celery broker (Redis URL)
 BROKER_URL=redis://<YOUR_LOCAL_IP>:6379/0
+MINIO_ROOT_USER=<YOUR_USER>
+MINIO_ROOT_PASSWORD=<YOUR_PASSWORD>
 ```
 >[!WARNING]
 > Replace `<YOUR_LOCAL_IP>` with your Mac’s LAN IP (e.g. `10.40.6.206`).
+> Replace `<YOUR_USER>` whit the user that you configure in docker 
+> Replace `<YOUR_PASSWORD>` whit the password that you use in your docker configuration 
 
 
-## 7. Launch Celery Workers
+## 8. Launch Celery Workers
 On each machine run from the project root:
 ```bash
 source venv/bin/activate
 celery -A tasks worker --loglevel=info --concurrency=1 --hostname=worker@%h
 ```
 
-## 8. Enqueue Tasks with the Producer
+## 9. Enqueue Tasks with the Producer
 On the central server, run:
 ```bash
 source venv/bin/activate

@@ -2,3 +2,4 @@ celery
 redis
 pillow
 python-dotenv
+boto3
