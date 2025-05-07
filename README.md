@@ -71,7 +71,10 @@ MINIO_ROOT_PASSWORD=<YOUR_PASSWORD>
 On each machine run from the project root:
 ```bash
 source venv/bin/activate
+# MacOS
 celery -A tasks worker --loglevel=info --concurrency=1 --hostname=worker@%h
+#Windows
+celery -A tasks worker -P solo --loglevel=info --concurrency=1 --hostname=win1@%h
 ```
 
 ## 9. Enqueue Tasks with the Producer
