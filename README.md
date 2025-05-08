@@ -69,12 +69,18 @@ MINIO_ROOT_PASSWORD=<YOUR_PASSWORD>
 
 ## 8. Launch Celery Workers
 On each machine run from the project root:
+#### MacOS
 ```bash
 source venv/bin/activate
-# MacOS
-celery -A tasks worker --loglevel=info --concurrency=1 --hostname=worker@%h
-#Windows
-celery -A tasks worker -P solo --loglevel=info --concurrency=1 --hostname=win1@%h
+# Worker without custom username 
+celery -A tasks worker -B --loglevel=info --concurrency=1 --hostname=worker@%h
+# Worker whit mac username
+celery -A tasks worker -B --loglevel=info --concurrency=1 \ --hostname="$(whoami)@%h" 
+```
+### Windows
+```bash
+# First activate your virtual environment in your shell of choice
+celery -A tasks worker -P solo -B --loglevel=info --concurrency=1 --hostname=win1@%h
 ```
 
 ## 9. Enqueue Tasks with the Producer
@@ -83,8 +89,6 @@ On the central server, run:
 source venv/bin/activate
 python producer.py
 ```
-
-
 
 ## Team Members
 - [Fabian Fernandez](https://github.com/FabsCR)

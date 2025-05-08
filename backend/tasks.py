@@ -1,18 +1,31 @@
-# tasks.py
 import os
+import time
+import socket
+import getpass
 import tempfile
-from dotenv import load_dotenv
-from celery import Celery
-from PIL import Image, ImageFilter
-import boto3
 
-# 1) Load env vars
+import psutil
+import requests
+import boto3
+from PIL import Image, ImageFilter
+from celery import Celery
+from dotenv import load_dotenv
+
+# 1) Load environment variables
 load_dotenv()
 
 # 2) Configure Celery
 app = Celery("distributed_blur", broker=os.getenv("BROKER_URL"))
 
-# 3) Initialize S3 client
+# 3) Schedule send_metrics via Beat
+app.conf.beat_schedule = {
+    "send-metrics": {
+        "task": "tasks.send_metrics",
+        "schedule": int(os.getenv("MONITOR_INTERVAL", 5)),
+    },
+}
+
+# 4) Configure MinIO S3 client
 s3 = boto3.client(
     "s3",
     endpoint_url=os.getenv("MINIO_ENDPOINT"),
@@ -24,71 +37,60 @@ BUCKET = os.getenv("MINIO_BUCKET")
 
 @app.task
 def blur_image_s3(key_in: str, key_out: str, radius: int = 5) -> str:
+    """Download from S3, apply Gaussian blur, upload back to S3."""
     print(f"[blur] start {key_in}")
-    # mkstemp para Windows
     fd, tmp_path = tempfile.mkstemp(suffix=os.path.splitext(key_in)[1])
     os.close(fd)
+    out_path = tmp_path + "_out" + os.path.splitext(key_in)[1]
 
     try:
         print(f"[blur] download {key_in} → {tmp_path}")
         s3.download_file(BUCKET, key_in, tmp_path)
-    except Exception as e:
-        print(f"[blur][ERROR] download failed: {e}")
-        raise
 
-    try:
         print(f"[blur] processing (r={radius})")
         img = Image.open(tmp_path).filter(ImageFilter.GaussianBlur(radius))
-    except Exception as e:
-        print(f"[blur][ERROR] processing failed: {e}")
-        raise
 
-    base, ext = os.path.splitext(tmp_path)
-    out_path = f"{base}_out{ext}"
-    try:
         img.save(out_path)
         print(f"[blur] upload {out_path} → {key_out}")
         s3.upload_file(out_path, BUCKET, key_out)
+
     except Exception as e:
-        print(f"[blur][ERROR] save/upload failed: {e}")
+        print(f"[blur][ERROR] {e}")
         raise
 
-    # cleanup
-    for p in (tmp_path, out_path):
-        try: os.remove(p)
-        except: pass
+    finally:
+        for p in (tmp_path, out_path):
+            try: os.remove(p)
+            except: pass
 
     print(f"[blur] done {key_in}")
     return key_out
 
 
 @app.task
-def heavy_image_pipeline_s3(key_in: str, key_out: str,
-                            scale_factor: float = 2.0,
-                            filters: list[dict] = None) -> str:
+def heavy_image_pipeline_s3(
+    key_in: str,
+    key_out: str,
+    scale_factor: float = 2.0,
+    filters: list[dict] = None
+) -> str:
+    """Download from S3, run filter pipeline, upload back to S3."""
     print(f"[heavy] start {key_in}")
     fd, tmp_path = tempfile.mkstemp(suffix=os.path.splitext(key_in)[1])
     os.close(fd)
+    out_path = tmp_path + "_out" + os.path.splitext(key_in)[1]
 
     try:
         print(f"[heavy] download {key_in} → {tmp_path}")
         s3.download_file(BUCKET, key_in, tmp_path)
-    except Exception as e:
-        print(f"[heavy][ERROR] download failed: {e}")
-        raise
 
-    try:
         img = Image.open(tmp_path)
-        print(f"[heavy] resize x{scale_factor}")
         w, h = img.size
+        print(f"[heavy] resize x{scale_factor}")
         img = img.resize((int(w*scale_factor), int(h*scale_factor)), Image.LANCZOS)
-    except Exception as e:
-        print(f"[heavy][ERROR] resize failed: {e}")
-        raise
 
-    for f in filters or []:
-        t = f.get("type")
-        try:
+        for f in filters or []:
+            t = f.get("type")
             print(f"[heavy] filter '{t}'")
             if t == "gaussian":
                 img = img.filter(ImageFilter.GaussianBlur(f.get("radius", 5)))
@@ -96,33 +98,92 @@ def heavy_image_pipeline_s3(key_in: str, key_out: str,
                 img = img.filter(ImageFilter.BoxBlur(f.get("radius", 5)))
             elif t == "detail":
                 img = img.filter(ImageFilter.DETAIL)
+            elif t == "edge_enhance_more":
+                img = img.filter(ImageFilter.EDGE_ENHANCE_MORE)
             elif t == "sharpen":
                 img = img.filter(ImageFilter.UnsharpMask(
                     radius=f.get("radius", 2),
                     percent=f.get("percent", 150),
                     threshold=f.get("threshold", 3)
                 ))
-            elif t == "edge_enhance":
-                img = img.filter(ImageFilter.EDGE_ENHANCE)
-            elif t == "edge_enhance_more":
-                img = img.filter(ImageFilter.EDGE_ENHANCE_MORE)
-        except Exception as e:
-            print(f"[heavy][ERROR] filter '{t}' failed: {e}")
-            raise
 
-    base, ext = os.path.splitext(tmp_path)
-    out_path = f"{base}_out{ext}"
-    try:
         img.save(out_path)
         print(f"[heavy] upload {out_path} → {key_out}")
         s3.upload_file(out_path, BUCKET, key_out)
+
     except Exception as e:
-        print(f"[heavy][ERROR] save/upload failed: {e}")
+        print(f"[heavy][ERROR] {e}")
         raise
 
-    for p in (tmp_path, out_path):
-        try: os.remove(p)
-        except: pass
+    finally:
+        for p in (tmp_path, out_path):
+            try: os.remove(p)
+            except: pass
 
     print(f"[heavy] done {key_in}")
     return key_out
+
+
+@app.task
+def send_metrics():
+    """
+    Collect CPU %, RAM total/used in MB (+%),
+    temperature (if available), log to console and POST to monitoring API.
+    """
+    hostname = f"{getpass.getuser()}@{socket.gethostname()}"
+    ts = time.time()
+
+    # CPU percentage
+    cpu_pct = psutil.cpu_percent(interval=None)
+
+    # RAM in bytes → MB + percentage
+    mem = psutil.virtual_memory()
+    total_b = mem.total
+    used_b = mem.used
+    total_mb = total_b / (1024 * 1024)
+    used_mb = used_b / (1024 * 1024)
+    used_pct = (used_mb / total_mb * 100) if total_mb else 0
+
+    # Temperature (°C) or None
+    temp = None
+    try:
+        temps = getattr(psutil, "sensors_temperatures", None)
+        if temps:
+            data = psutil.sensors_temperatures()
+            for entries in data.values():
+                for entry in entries:
+                    if entry.current is not None:
+                        temp = round(entry.current, 1)
+                        break
+                if temp is not None:
+                    break
+    except Exception:
+        temp = None
+
+    # Console log
+    print(f"\n[{time.strftime('%Y-%m-%d %H:%M:%S')}] Host: {hostname}")
+    print(f"  CPU Usage:     {cpu_pct:6.2f}%")
+    print(f"  RAM Total:     {total_mb:8.2f} MB")
+    print(f"  RAM Used:      {used_mb:8.2f} MB ({used_pct:6.2f}%)")
+    print(f"  Temperature:   {f'{temp}°C' if temp is not None else 'N/A'}")
+
+    # Payload
+    payload = {
+        "hostname":     hostname,
+        "cpu_percent":  cpu_pct,
+        "ram_total_mb": round(total_mb, 2),
+        "ram_used_mb":  round(used_mb, 2),
+        "ram_percent":  round(used_pct, 2),
+        "temperature":  temp,
+        "timestamp":    ts,
+    }
+
+    # POST to API
+    url = os.getenv("MONITOR_SERVER")
+    try:
+        resp = requests.post(url, json=payload, timeout=3)
+        resp.raise_for_status()
+    except Exception as e:
+        print("Metrics send error:", e)
+
+    return "ok"

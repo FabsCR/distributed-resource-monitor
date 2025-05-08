@@ -1,5 +1,22 @@
-celery
+# Celery + broker
+celery[redis]
 redis
+
+# Image processing
 pillow
-python-dotenv
 boto3
+
+# Configuración
+python-dotenv
+
+# Web/API
+fastapi
+uvicorn
+
+# Base de datos
+sqlalchemy
+psycopg2-binary
+
+# Agente de métricas
+requests
+psutil
