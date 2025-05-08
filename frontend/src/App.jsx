@@ -1,10 +1,7 @@
-function App() {
+// App.jsx
+import React from "react";
+import MonitoringDashboard from "./components/MonitoringDashboard";
 
-  return (
-    <h1 className="text-3xl font-bold underline">
-      Hello world!
-    </h1>
-  )
+export default function App() {
+  return <MonitoringDashboard />;
 }
-
-export default App

@@ -1,5 +1,12 @@
-.env 
 /outputs
 /venv
 __pycache__/
 /samples
+
+
+# Celery beat schedule files
+celerybeat-schedule
+celerybeat-schedule-shm
+celerybeat-schedule-wal
+
+.env 
