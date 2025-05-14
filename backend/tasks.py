@@ -144,7 +144,6 @@ def send_metrics():
     used_mb = used_b / (1024 * 1024)
     used_pct = (used_mb / total_mb * 100) if total_mb else 0
 
-    # Temperature (°C) or None
     temp = None
     try:
         temps = getattr(psutil, "sensors_temperatures", None)

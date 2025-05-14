@@ -5,7 +5,6 @@ import {
   CardHeader,
   CardBody,
   Typography,
-  Progress,
 } from "@material-tailwind/react";
 import { Cpu, MemoryStickIcon as Memory, Thermometer } from "lucide-react";
 
@@ -20,11 +19,12 @@ export function ComputerCard({ computer }) {
     timestamp,
   } = computer;
 
-  // Color dinámico para el texto
   const textColor = (pct) =>
-    pct > 80 ? "text-red-600" :
-    pct > 60 ? "text-yellow-600" :
-               "text-green-600";
+    pct > 80
+      ? "text-red-600"
+      : pct > 60
+      ? "text-yellow-600"
+      : "text-green-600";
 
   return (
     <Card className="w-full shadow-lg rounded-xl">
@@ -54,16 +54,18 @@ export function ComputerCard({ computer }) {
               {cpu_percent.toFixed(2)}%
             </Typography>
           </div>
-          <Progress
-            value={cpu_percent}
-            className="h-2 bg-gray-200"
-            barClassName={`!bg-gradient-to-tr ${cpu_percent > 80
-              ? "from-red-500 to-red-400"
-              : cpu_percent > 60
-              ? "from-yellow-500 to-yellow-400"
-              : "from-green-500 to-green-400"
-            }`}
-          />
+          <div className="h-2 bg-gray-200 rounded overflow-hidden">
+            <div
+              className={`h-full rounded !bg-gradient-to-tr ${
+                cpu_percent > 80
+                  ? "from-red-500 to-red-400"
+                  : cpu_percent > 60
+                  ? "from-yellow-500 to-yellow-400"
+                  : "from-green-500 to-green-400"
+              } transition-all duration-500`}
+              style={{ width: `${cpu_percent}%` }}
+            />
+          </div>
         </div>
 
         {/* RAM */}
@@ -76,29 +78,28 @@ export function ComputerCard({ computer }) {
               </Typography>
             </div>
             <Typography variant="small" className={textColor(ram_percent)}>
-              {ram_used_mb.toFixed(2)} / {ram_total_mb.toFixed(2)} MB
+              {ram_used_mb.toFixed(2)} / {ram_total_mb.toFixed(2)} MB
             </Typography>
           </div>
-          <Progress
-            value={ram_percent}
-            className="h-2 bg-gray-200"
-            barClassName={`!bg-gradient-to-tr ${ram_percent > 80
-              ? "from-red-500 to-red-400"
-              : ram_percent > 60
-              ? "from-yellow-500 to-yellow-400"
-              : "from-green-500 to-green-400"
-            }`}
-          />
+          <div className="h-2 bg-gray-200 rounded overflow-hidden">
+            <div
+              className={`h-full rounded !bg-gradient-to-tr ${
+                ram_percent > 80
+                  ? "from-red-500 to-red-400"
+                  : ram_percent > 60
+                  ? "from-yellow-500 to-yellow-400"
+                  : "from-green-500 to-green-400"
+              } transition-all duration-500`}
+              style={{ width: `${ram_percent}%` }}
+            />
+          </div>
         </div>
 
         {/* Temperatura */}
         <div className="flex items-center gap-2">
           <Thermometer className="w-5 h-5 text-blue-500" />
           <Typography variant="small" color="gray">
-            Temperature:{" "}
-            {temperature != null
-              ? `${temperature.toFixed(1)}°C`
-              : "N/A"}
+            Temperature: {temperature != null ? `${temperature.toFixed(1)}°C` : "N/A"}
           </Typography>
         </div>
       </CardBody>

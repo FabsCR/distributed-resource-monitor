@@ -1,10 +1,16 @@
-import React, { useEffect, useRef } from 'react'
+// src/components/Terminal.jsx
+import React, { useEffect, useRef } from "react";
 
 export function Terminal({ logs }) {
-  const ref = useRef(null)
+  const ref = useRef(null);
   useEffect(() => {
-    if (ref.current) ref.current.scrollTop = ref.current.scrollHeight
-  }, [logs])
+    if (ref.current) ref.current.scrollTop = ref.current.scrollHeight;
+  }, [logs]);
+
+  // debug: ver en consola
+  useEffect(() => {
+    console.log("Terminal logs:", logs);
+  }, [logs]);
 
   return (
     <div className="bg-black text-green-400 font-mono rounded-lg overflow-hidden border border-gray-700">
@@ -17,13 +23,20 @@ export function Terminal({ logs }) {
         <span className="ml-4 text-gray-200 text-sm">Terminal</span>
       </div>
       <div ref={ref} className="p-4 h-64 overflow-y-auto">
-        {logs.map((log, i) => (
-          <div key={i} className="mb-1">
-            {log}
-          </div>
-        ))}
+        {logs.map((log, i) => {
+          let colorClass = "text-green-400";
+          if (log.type === "assigned") colorClass = "text-gray-400";
+          if (log.type === "finished") colorClass = "text-green-400";
+          if (log.type === "info") colorClass = "text-green-300";
+          if (log.type === "error") colorClass = "text-red-500";
+          return (
+            <div key={i} className={`${colorClass} mb-1`}>
+              {log.text}
+            </div>
+          );
+        })}
         <div className="animate-pulse">_</div>
       </div>
     </div>
-  )
+  );
 }

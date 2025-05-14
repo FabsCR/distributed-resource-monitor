@@ -66,16 +66,28 @@ MINIO_ROOT_PASSWORD=<YOUR_PASSWORD>
 > Replace `<YOUR_USER>` whit the user that you configure in docker 
 > Replace `<YOUR_PASSWORD>` whit the password that you use in your docker configuration 
 
+## 8. Launch Postgres server  
+```bash
+uvicorn server:app --host 0.0.0.0 --port 8000 --reload
+```
 
-## 8. Launch Celery Workers
+## 9. Launch Celery Workers
 On each machine run from the project root:
 #### MacOS
 ```bash
 source venv/bin/activate
+celery multi start monitor images \
+  -A tasks \
+  --beat \
+  --loglevel=info \
+  --queues=monitor,default \
+  --concurrency=1,1 \
+  --hostname=monitor@%h,images@%h
+
 # Worker without custom username 
 celery -A tasks worker -B --loglevel=info --concurrency=1 --hostname=worker@%h
 # Worker whit mac username
-celery -A tasks worker -B --loglevel=info --concurrency=1 \ --hostname="$(whoami)@%h" 
+celery -A tasks worker -B --loglevel=info --concurrency=1 --hostname="$(whoami)@%h"
 ```
 ### Windows
 ```bash
@@ -83,7 +95,7 @@ celery -A tasks worker -B --loglevel=info --concurrency=1 \ --hostname="$(whoami
 celery -A tasks worker -P solo -B --loglevel=info --concurrency=1 --hostname=win1@%h
 ```
 
-## 9. Enqueue Tasks with the Producer
+## 10. Enqueue Tasks with the Producer
 On the central server, run:
 ```bash
 source venv/bin/activate
