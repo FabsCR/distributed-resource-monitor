@@ -56,13 +56,13 @@ export function ComputerCard({ computer }) {
           </div>
           <div className="h-2 bg-gray-200 rounded overflow-hidden">
             <div
-              className={`h-full rounded !bg-gradient-to-tr ${
+              className={`h-full rounded transition-all duration-500 bg-gradient-to-tr ${
                 cpu_percent > 80
                   ? "from-red-500 to-red-400"
                   : cpu_percent > 60
                   ? "from-yellow-500 to-yellow-400"
                   : "from-green-500 to-green-400"
-              } transition-all duration-500`}
+              }`}
               style={{ width: `${cpu_percent}%` }}
             />
           </div>
@@ -83,13 +83,13 @@ export function ComputerCard({ computer }) {
           </div>
           <div className="h-2 bg-gray-200 rounded overflow-hidden">
             <div
-              className={`h-full rounded !bg-gradient-to-tr ${
+              className={`h-full rounded transition-all duration-500 bg-gradient-to-tr ${
                 ram_percent > 80
                   ? "from-red-500 to-red-400"
                   : ram_percent > 60
                   ? "from-yellow-500 to-yellow-400"
                   : "from-green-500 to-green-400"
-              } transition-all duration-500`}
+              }`}
               style={{ width: `${ram_percent}%` }}
             />
           </div>
