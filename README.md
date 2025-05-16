@@ -72,27 +72,37 @@ uvicorn server:app --host 0.0.0.0 --port 8000 --reload
 ```
 
 ## 9. Launch Celery Workers
-On each machine run from the project root:
-#### MacOS
+
+### macOS
+
+#### Metrics Worker (with Beat)
 ```bash
 source venv/bin/activate
-celery multi start monitor images \
-  -A tasks \
-  --beat \
-  --loglevel=info \
-  --queues=monitor,default \
-  --concurrency=1,1 \
-  --hostname=monitor@%h,images@%h
-
-# Worker without custom username 
-celery -A tasks worker -B --loglevel=info --concurrency=1 --hostname=worker@%h
-# Worker whit mac username
-celery -A tasks worker -B --loglevel=info --concurrency=1 --hostname="$(whoami)@%h"
+celery -A tasks worker --queues=metrics --concurrency=1 --hostname="$(whoami)@%h" -B --loglevel=info
 ```
-### Windows
+
+#### Heavy Worker
 ```bash
-# First activate your virtual environment in your shell of choice
-celery -A tasks worker -P solo -B --loglevel=info --concurrency=1 --hostname=win1@%h
+source venv/bin/activate
+celery -A tasks worker --queues=heavy --concurrency=1 --hostname="$(whoami)@%h" --loglevel=info
+```
+
+---
+
+### Windows
+
+> **Note:** On Windows, it’s recommended to use the `solo` pool because the default `prefork` pool may not work properly.
+
+#### Metrics Worker (with Beat)
+```powershell
+# Activate your virtual environment first
+celery -A tasks worker -P solo --queues=metrics --concurrency=1 --hostname="metrics@%h" -B --loglevel=info
+```
+
+#### Heavy Worker
+```powershell
+# Activate your virtual environment first
+celery -A tasks worker -P solo --queues=heavy --concurrency=1 --hostname="heavy@%h" --loglevel=info
 ```
 
 ## 10. Enqueue Tasks with the Producer

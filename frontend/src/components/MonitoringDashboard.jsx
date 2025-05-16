@@ -1,4 +1,3 @@
-// src/components/MonitoringDashboard.jsx
 import React, { useState, useEffect, useMemo } from "react";
 import { useQuery } from "@tanstack/react-query";
 import { Terminal } from "./Terminal";
@@ -44,12 +43,23 @@ export default function MonitoringDashboard() {
     },
   });
 
-  // Calcula edad en ms y s de cada máquina
+  // Calcula edad en ms y s de cada máquina (normaliza timestamp en segundos o ms)
   const withAge = useMemo(() => {
     const now = Date.now();
     return computers.map((c) => {
-      const ageMs = now - new Date(c.timestamp).getTime();
-      return { ...c, ageMs, ageSec: ageMs / 1000 };
+      // Normalizar timestamp: si es número en segundos, convertir a ms
+      let tsRaw = c.timestamp;
+      let tsMs;
+      if (typeof tsRaw === "number") {
+        // segundos a ms si es menor a 1e12
+        tsMs = tsRaw < 1e12 ? tsRaw * 1000 : tsRaw;
+      } else {
+        tsMs = new Date(tsRaw).getTime();
+      }
+
+      const ageMs = now - tsMs;
+      const ageSec = ageMs / 1000;
+      return { ...c, ageMs, ageSec, timestamp: tsMs };
     });
   }, [computers, tick]);
 

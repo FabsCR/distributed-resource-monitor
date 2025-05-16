@@ -1,3 +1,5 @@
+# tasks.py
+
 import os
 import time
 import socket
@@ -11,21 +13,29 @@ from PIL import Image, ImageFilter
 from celery import Celery
 from dotenv import load_dotenv
 
-# 1) Load environment variables
+# 1) Carga de variables de entorno
 load_dotenv()
 
-# 2) Configure Celery
+# 2) Configuración de Celery
 app = Celery("distributed_blur", broker=os.getenv("BROKER_URL"))
 
-# 3) Schedule send_metrics via Beat
+# 2.1) Rutas: mapear cada tarea a su cola
+app.conf.task_routes = {
+    "tasks.send_metrics": {"queue": "metrics"},
+    "tasks.heavy_image_pipeline_s3": {"queue": "heavy"},
+    "tasks.blur_image_s3": {"queue": "heavy"},
+}
+
+# 3) Schedule send_metrics vía Beat
 app.conf.beat_schedule = {
     "send-metrics": {
         "task": "tasks.send_metrics",
         "schedule": int(os.getenv("MONITOR_INTERVAL", 5)),
+        "options": {"queue": "metrics"},
     },
 }
 
-# 4) Configure MinIO S3 client
+# 4) Cliente S3 (MinIO)
 s3 = boto3.client(
     "s3",
     endpoint_url=os.getenv("MINIO_ENDPOINT"),
@@ -60,8 +70,10 @@ def blur_image_s3(key_in: str, key_out: str, radius: int = 5) -> str:
 
     finally:
         for p in (tmp_path, out_path):
-            try: os.remove(p)
-            except: pass
+            try:
+                os.remove(p)
+            except OSError:
+                pass
 
     print(f"[blur] done {key_in}")
     return key_out
@@ -87,7 +99,7 @@ def heavy_image_pipeline_s3(
         img = Image.open(tmp_path)
         w, h = img.size
         print(f"[heavy] resize x{scale_factor}")
-        img = img.resize((int(w*scale_factor), int(h*scale_factor)), Image.LANCZOS)
+        img = img.resize((int(w * scale_factor), int(h * scale_factor)), Image.LANCZOS)
 
         for f in filters or []:
             t = f.get("type")
@@ -117,8 +129,10 @@ def heavy_image_pipeline_s3(
 
     finally:
         for p in (tmp_path, out_path):
-            try: os.remove(p)
-            except: pass
+            try:
+                os.remove(p)
+            except OSError:
+                pass
 
     print(f"[heavy] done {key_in}")
     return key_out
@@ -127,29 +141,23 @@ def heavy_image_pipeline_s3(
 @app.task
 def send_metrics():
     """
-    Collect CPU %, RAM total/used in MB (+%),
-    temperature (if available), log to console and POST to monitoring API.
+    Recopila CPU %, RAM total/used en MB (+%),
+    temperatura (si está disponible), lo imprime y lo envía por POST.
     """
     hostname = f"{getpass.getuser()}@{socket.gethostname()}"
     ts = time.time()
 
-    # CPU percentage
     cpu_pct = psutil.cpu_percent(interval=None)
-
-    # RAM in bytes → MB + percentage
     mem = psutil.virtual_memory()
-    total_b = mem.total
-    used_b = mem.used
-    total_mb = total_b / (1024 * 1024)
-    used_mb = used_b / (1024 * 1024)
+    total_mb = mem.total / (1024 * 1024)
+    used_mb = mem.used / (1024 * 1024)
     used_pct = (used_mb / total_mb * 100) if total_mb else 0
 
     temp = None
     try:
-        temps = getattr(psutil, "sensors_temperatures", None)
-        if temps:
-            data = psutil.sensors_temperatures()
-            for entries in data.values():
+        df_temps = getattr(psutil, "sensors_temperatures", None)
+        if df_temps:
+            for entries in psutil.sensors_temperatures().values():
                 for entry in entries:
                     if entry.current is not None:
                         temp = round(entry.current, 1)
@@ -159,14 +167,12 @@ def send_metrics():
     except Exception:
         temp = None
 
-    # Console log
     print(f"\n[{time.strftime('%Y-%m-%d %H:%M:%S')}] Host: {hostname}")
     print(f"  CPU Usage:     {cpu_pct:6.2f}%")
     print(f"  RAM Total:     {total_mb:8.2f} MB")
     print(f"  RAM Used:      {used_mb:8.2f} MB ({used_pct:6.2f}%)")
     print(f"  Temperature:   {f'{temp}°C' if temp is not None else 'N/A'}")
 
-    # Payload
     payload = {
         "hostname":     hostname,
         "cpu_percent":  cpu_pct,
@@ -177,10 +183,8 @@ def send_metrics():
         "timestamp":    ts,
     }
 
-    # POST to API
-    url = os.getenv("MONITOR_SERVER")
     try:
-        resp = requests.post(url, json=payload, timeout=3)
+        resp = requests.post(os.getenv("MONITOR_SERVER"), json=payload, timeout=3)
         resp.raise_for_status()
     except Exception as e:
         print("Metrics send error:", e)
