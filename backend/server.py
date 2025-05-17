@@ -1,10 +1,11 @@
 import os
-from fastapi import FastAPI, HTTPException
+from fastapi import FastAPI, HTTPException, Query
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel
 from datetime import datetime
 from sqlalchemy import (
-    create_engine, Column, Float, String, DateTime, MetaData, Table
+    create_engine, Column, Float, String, DateTime,
+    MetaData, Table, Boolean, Integer, select, desc
 )
 from sqlalchemy.dialects.postgresql import insert
 from sqlalchemy.orm import sessionmaker
@@ -12,29 +13,40 @@ from dotenv import load_dotenv
 
 load_dotenv()
 DB_URL  = os.getenv("DATABASE_URL")
-raw = os.getenv("CORS_ORIGINS", "")
+raw     = os.getenv("CORS_ORIGINS", "")
 ORIGINS = [o.strip().rstrip("/") for o in raw.split(",") if o.strip()]
 
-
-# 1) Conexión y definición de la tabla “current_metrics”
+# Connection and table definitions
 engine = create_engine(DB_URL)
-meta = MetaData()
+meta   = MetaData()
 
+# Current metrics table
 current_metrics = Table(
     "current_metrics", meta,
-    Column("hostname",     String,   primary_key=True),
-    Column("cpu_percent",  Float,    nullable=False),
-    Column("ram_total_mb", Float,    nullable=False),
-    Column("ram_used_mb",  Float,    nullable=False),
-    Column("ram_percent",  Float,    nullable=False),
-    Column("temperature",  Float,    nullable=True),
+    Column("hostname",     String, primary_key=True),
+    Column("cpu_percent",  Float,  nullable=False),
+    Column("ram_total_mb", Float,  nullable=False),
+    Column("ram_used_mb",  Float,  nullable=False),
+    Column("ram_percent",  Float,  nullable=False),
+    Column("temperature",  Float,  nullable=True),
     Column("timestamp",    DateTime, nullable=False),
 )
 
+# Log table for heavy tasks
+task_status_log = Table(
+    "task_status_log", meta,
+    Column("id",         Integer, primary_key=True, autoincrement=True),
+    Column("hostname",   String,  nullable=False),
+    Column("task_name",  String,  nullable=False),
+    Column("delivered",  Boolean, nullable=False),
+    Column("created_at", DateTime, nullable=False),
+)
+
+# Create tables if they don't exist
 meta.create_all(engine)
 Session = sessionmaker(bind=engine)
 
-# 2) Modelo Pydantic acorde al payload
+# Pydantic model for receiving metrics
 class MetricsIn(BaseModel):
     hostname:     str
     cpu_percent:  float
@@ -44,7 +56,7 @@ class MetricsIn(BaseModel):
     temperature:  float | None
     timestamp:    float
 
-# 3) FastAPI + CORS
+# FastAPI app and CORS configuration
 app = FastAPI()
 app.add_middleware(
     CORSMiddleware,
@@ -54,7 +66,7 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
-# 4) Endpoint que hace UPSERT
+# Endpoint for upserting into current_metrics
 @app.post("/metrics")
 def receive(m: MetricsIn):
     s = Session()
@@ -68,7 +80,6 @@ def receive(m: MetricsIn):
             temperature  = m.temperature,
             timestamp    = datetime.fromtimestamp(m.timestamp)
         )
-        # ON CONFLICT DO UPDATE para hostname
         stmt = stmt.on_conflict_do_update(
             index_elements=["hostname"],
             set_={
@@ -89,13 +100,9 @@ def receive(m: MetricsIn):
     finally:
         s.close()
 
-# 5) Devuelve la lista de hosts con su estado actual
+# Returns the list of hosts with their current status
 @app.get("/metrics")
 def list_current_metrics():
-    """
-    Retorna un array con un objeto por cada hostname,
-    conteniendo las últimas métricas.
-    """
     s = Session()
     rows = s.query(current_metrics).all()
     s.close()
@@ -110,4 +117,35 @@ def list_current_metrics():
             "timestamp":    r.timestamp.isoformat(),
         }
         for r in rows
+    ]
+
+# Endpoint to retrieve heavy tasks logs
+@app.get("/logs")
+def read_logs(limit: int = 10):
+    s = Session()
+    try:
+        stmt = (
+            select(
+                task_status_log.c.hostname,
+                task_status_log.c.task_name,
+                task_status_log.c.delivered,
+                task_status_log.c.created_at,
+            )
+            .order_by(desc(task_status_log.c.created_at))
+            .limit(limit)
+        )
+        rows = s.execute(stmt).all()
+    except Exception as e:
+        raise HTTPException(500, str(e))
+    finally:
+        s.close()
+
+    return [
+        {
+            "hostname":   h,
+            "task_name":  t,
+            "delivered":  d,
+            "created_at": ct.isoformat(),
+        }
+        for h, t, d, ct in rows
     ]

@@ -1,5 +1,3 @@
-# tasks.py
-
 import os
 import time
 import socket
@@ -9,24 +7,26 @@ import tempfile
 import psutil
 import requests
 import boto3
+import psycopg2
 from PIL import Image, ImageFilter
 from celery import Celery
+from celery.signals import task_prerun, task_postrun
 from dotenv import load_dotenv
 
-# 1) Carga de variables de entorno
+# Load environment variables
 load_dotenv()
 
-# 2) Configuración de Celery
+# Configure Celery
 app = Celery("distributed_blur", broker=os.getenv("BROKER_URL"))
 
-# 2.1) Rutas: mapear cada tarea a su cola
+# Map each task to its queue
 app.conf.task_routes = {
     "tasks.send_metrics": {"queue": "metrics"},
     "tasks.heavy_image_pipeline_s3": {"queue": "heavy"},
     "tasks.blur_image_s3": {"queue": "heavy"},
 }
 
-# 3) Schedule send_metrics vía Beat
+# Schedule send_metrics via Beat
 app.conf.beat_schedule = {
     "send-metrics": {
         "task": "tasks.send_metrics",
@@ -35,7 +35,7 @@ app.conf.beat_schedule = {
     },
 }
 
-# 4) Cliente S3 (MinIO)
+# S3 client (MinIO)
 s3 = boto3.client(
     "s3",
     endpoint_url=os.getenv("MINIO_ENDPOINT"),
@@ -43,6 +43,57 @@ s3 = boto3.client(
     aws_secret_access_key=os.getenv("MINIO_ROOT_PASSWORD"),
 )
 BUCKET = os.getenv("MINIO_BUCKET")
+
+# Logging heavy task status
+
+def log_task_event(task_name: str, delivered: bool):
+    """
+    Insert a record into task_status_log:
+      - hostname: user@host
+      - task_name: name of the task (e.g. "blur image1.jpg")
+      - delivered: False at start, True at finish
+    """
+    dsn = os.getenv("DATABASE_URL")
+    hostname = f"{getpass.getuser()}@{socket.gethostname()}"
+    conn = cur = None
+    try:
+        conn = psycopg2.connect(dsn)
+        cur = conn.cursor()
+        cur.execute(
+            """
+            INSERT INTO task_status_log (hostname, task_name, delivered, created_at)
+            VALUES (%s, %s, %s, NOW())
+            """,
+            (hostname, task_name, delivered)
+        )
+        conn.commit()
+    except Exception as e:
+        print(f"[log][ERROR] Could not insert into DB: {e}")
+    finally:
+        if cur:
+            cur.close()
+        if conn:
+            conn.close()
+
+
+@task_prerun.connect
+def before_task_run(sender=None, task_id=None, args=None, kwargs=None, **extras):
+    # Only log for heavy image tasks
+    if sender.name in ("tasks.blur_image_s3", "tasks.heavy_image_pipeline_s3"):
+        key_in = args[0] if args else None
+        filename = os.path.basename(key_in) if key_in else sender.name
+        action = "blur" if sender.name == "tasks.blur_image_s3" else "heavy"
+        log_task_event(f"{action} {filename}", False)
+
+
+@task_postrun.connect
+def after_task_run(sender=None, task_id=None, args=None, kwargs=None, retval=None, state=None, **extras):
+    # Only log for heavy image tasks
+    if sender.name in ("tasks.blur_image_s3", "tasks.heavy_image_pipeline_s3"):
+        key_in = args[0] if args else None
+        filename = os.path.basename(key_in) if key_in else sender.name
+        action = "blur" if sender.name == "tasks.blur_image_s3" else "heavy"
+        log_task_event(f"{action} {filename}", True)
 
 
 @app.task
@@ -141,8 +192,8 @@ def heavy_image_pipeline_s3(
 @app.task
 def send_metrics():
     """
-    Recopila CPU %, RAM total/used en MB (+%),
-    temperatura (si está disponible), lo imprime y lo envía por POST.
+    Collect CPU %, RAM total/used in MB (+%),
+    temperature (if available), print and send via POST.
     """
     hostname = f"{getpass.getuser()}@{socket.gethostname()}"
     ts = time.time()
