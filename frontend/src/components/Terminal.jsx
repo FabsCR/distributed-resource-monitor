@@ -1,4 +1,3 @@
-// src/components/Terminal.jsx
 import React, { useEffect, useRef } from "react";
 
 export function Terminal({ logs }) {
@@ -23,7 +22,7 @@ export function Terminal({ logs }) {
         <span className="ml-4 text-gray-200 text-sm">Terminal</span>
       </div>
       <div ref={ref} className="p-4 h-64 overflow-y-auto">
-        {logs.map((log, i) => {
+        {logs.slice().reverse().map((log, i) => {
           let colorClass = "text-green-400";
           if (log.type === "assigned") colorClass = "text-gray-400";
           if (log.type === "finished") colorClass = "text-green-400";
