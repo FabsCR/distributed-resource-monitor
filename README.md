@@ -84,7 +84,7 @@ celery -A tasks worker --queues=metrics --concurrency=1 --hostname="$(whoami)@%h
 #### Heavy Worker
 ```bash
 source venv/bin/activate
-celery -A tasks worker --queues=heavy --concurrency=1 --hostname="$(whoami)@%h" --loglevel=info
+celery -A tasks worker -P solo --queues=images --concurrency=1 --hostname="worker@%h" --loglevel=info
 ```
 
 ---
@@ -96,13 +96,13 @@ celery -A tasks worker --queues=heavy --concurrency=1 --hostname="$(whoami)@%h" 
 #### Metrics Worker (with Beat)
 ```powershell
 # Activate your virtual environment first
-celery -A tasks worker -P solo --queues=metrics --concurrency=1 --hostname="metrics@%h" -B --loglevel=info
+celery -A tasks beat --loglevel=info & celery -A tasks worker --pool=threads --concurrency=1 --queues=metrics --hostname="$(whoami)@%h" --loglevel=info
 ```
 
 #### Heavy Worker
 ```powershell
 # Activate your virtual environment first
-celery -A tasks worker -P solo --queues=heavy --concurrency=1 --hostname="heavy@%h" --loglevel=info
+celery -A tasks worker -P solo --queues=images --concurrency=1 --hostname="heavy@%h" --loglevel=info
 ```
 
 ## 10. Enqueue Tasks with the Producer

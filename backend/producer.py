@@ -39,12 +39,14 @@ for page in paginator.paginate(Bucket=BUCKET, Prefix="samples/"):
             continue
 
         print(f"[producer] Enqueuing {key}")
-        blur_image_s3.delay(key, f"outputs/blur_{os.path.basename(key)}", RADIUS)
-        heavy_image_pipeline_s3.delay(
-            key,
-            f"outputs/filters_{os.path.basename(key)}",
-            scale_factor=SCALE,
-            filters=FILTERS_PIPELINE
+        blur_image_s3.apply_async(
+            args=[key, f"outputs/blur_{os.path.basename(key)}", RADIUS],
+            priority=10
+        )
+        heavy_image_pipeline_s3.apply_async(
+            args=[key, f"outputs/filters_{os.path.basename(key)}"],
+            kwargs={"scale_factor": SCALE, "filters": FILTERS_PIPELINE},
+            priority=1
         )
 
 print("[producer] All tasks enqueued.")

@@ -1,3 +1,4 @@
+# tasks.py
 import os
 import time
 import socket
@@ -12,6 +13,7 @@ from PIL import Image, ImageFilter
 from celery import Celery
 from celery.signals import task_prerun, task_postrun
 from dotenv import load_dotenv
+from kombu import Queue
 
 # Load environment variables
 load_dotenv()
@@ -19,11 +21,17 @@ load_dotenv()
 # Configure Celery
 app = Celery("distributed_blur", broker=os.getenv("BROKER_URL"))
 
+app.conf.task_queues = [
+    Queue("images", routing_key="images", queue_arguments={"x-max-priority": 10})
+]
+app.conf.task_default_queue = "images"
+app.conf.task_default_routing_key = "images"
+
 # Map each task to its queue
 app.conf.task_routes = {
     "tasks.send_metrics": {"queue": "metrics"},
-    "tasks.heavy_image_pipeline_s3": {"queue": "heavy"},
-    "tasks.blur_image_s3": {"queue": "heavy"},
+    "tasks.heavy_image_pipeline_s3": {"queue": "images"},
+    "tasks.blur_image_s3": {"queue": "images"},
 }
 
 # Schedule send_metrics via Beat
