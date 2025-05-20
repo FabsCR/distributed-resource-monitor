@@ -41,12 +41,12 @@ for page in paginator.paginate(Bucket=BUCKET, Prefix="samples/"):
         print(f"[producer] Enqueuing {key}")
         blur_image_s3.apply_async(
             args=[key, f"outputs/blur_{os.path.basename(key)}", RADIUS],
-            priority=10
+            priority=1
         )
         heavy_image_pipeline_s3.apply_async(
             args=[key, f"outputs/filters_{os.path.basename(key)}"],
             kwargs={"scale_factor": SCALE, "filters": FILTERS_PIPELINE},
-            priority=1
+            priority=10
         )
 
 print("[producer] All tasks enqueued.")
